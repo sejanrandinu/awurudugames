@@ -34,6 +34,16 @@ export const addRegistration = async (registration) => {
   }
 };
 
+export const removeRegistration = async (id) => {
+  try {
+    const res = await fetch(`/api/registrations?id=${id}`, { method: 'DELETE' });
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return { success: false };
+  }
+};
+
 export const clearRegistrations = async () => {
   try {
     await fetch('/api/registrations', { method: 'DELETE' });
@@ -53,12 +63,12 @@ export const getHints = async () => {
   }
 };
 
-export const updateHint = async (eventId, hintText) => {
+export const updateHint = async (eventId, hintText, hintImage) => {
   try {
     const res = await fetch('/api/hints', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventId, hintText })
+      body: JSON.stringify({ eventId, hintText, hintImage })
     });
     return await res.json();
   } catch (err) {
@@ -103,12 +113,62 @@ export const getEventStatuses = async () => {
   }
 };
 
-export const updateEventStatus = async (eventId, isDisabled) => {
+export const updateEventStatus = async (eventId, isDisabled, price) => {
   try {
     const res = await fetch('/api/event-status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventId, isDisabled })
+      body: JSON.stringify({ eventId, isDisabled, price })
+    });
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return { success: false };
+  }
+};
+
+export const getPrizes = async () => {
+  try {
+    const res = await fetch('/api/prizes');
+    if (!res.ok) throw new Error('Network error');
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return [];
+  }
+};
+
+export const updatePrize = async (eventId, prizeText) => {
+  try {
+    const res = await fetch('/api/prizes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId, prizeText })
+    });
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return { success: false };
+  }
+};
+
+export const getPaymentInfo = async () => {
+  try {
+    const res = await fetch('/api/payment-info');
+    if (!res.ok) throw new Error('Network error');
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return {};
+  }
+};
+
+export const updatePaymentInfo = async (info) => {
+  try {
+    const res = await fetch('/api/payment-info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(info)
     });
     return await res.json();
   } catch (err) {
@@ -125,7 +185,7 @@ export const EVENT_DETAILS = [
     price: 20,
     playMode: 'text',
     guessLabel: 'මලේ නම (Flower Name)',
-    hint: 'ඉඟිය (Hint): මෙය ජලයේ පිපෙන, ලාංකීය සංස්කෘතියට ඉතා සමීප වූ සුදු පැහැ මලකි.',
+    hint: '',
     icon: '🌸'
   },
   {
@@ -135,7 +195,7 @@ export const EVENT_DETAILS = [
     price: 20,
     playMode: 'text',
     guessLabel: 'අමුත්තාගේ නම (Guest Name)',
-    hint: 'ඉඟිය (Hint): ',
+    hint: '',
     icon: '🕵️'
   },
   {
@@ -145,7 +205,7 @@ export const EVENT_DETAILS = [
     price: 20,
     playMode: 'text',
     guessLabel: 'සැඟවුණු වස්තුව (Hidden Treasure)',
-    hint: 'ඉඟිය (Hint): ',
+    hint: '',
     icon: '🏺'
   },
   {
@@ -155,7 +215,7 @@ export const EVENT_DETAILS = [
     price: 20,
     playMode: 'number',
     guessLabel: 'ඇට ගණන (Number of Seeds)',
-    hint: 'ඉඟිය (Hint): ',
+    hint: '',
     icon: '🍉'
   }
 ];

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { EVENT_DETAILS, addRegistration, getHints, getOfficialResults, getRegistrationsByPhone, getRegistrations, getEventStatuses } from '../store';
-import { Settings, X, CheckCircle, HelpCircle, Trophy, Search, ChevronRight, Hash } from 'lucide-react';
+import { EVENT_DETAILS, addRegistration, getHints, getOfficialResults, getRegistrationsByPhone, getRegistrations, getEventStatuses, getPrizes, getPaymentInfo } from '../store';
+import { Settings, X, CheckCircle, HelpCircle, Trophy, Search, ChevronRight, Hash, Gift, Banknote } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const DICE_SYMBOLS = ['🐘 අලියා', '🐎 අශ්වයා', '🐟 මාළුවා', '🐓 කුකුළා', '🦁 සිංහයා', '🐯 කොටියා'];
@@ -9,10 +9,11 @@ const DICE_SYMBOLS = ['🐘 අලියා', '🐎 අශ්වයා', '🐟 �
 export default function Home() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [formData, setFormData] = useState({ name: '', phone: '', guess: '' });
+  const [formData, setFormData] = useState({ name: '', phone: '', guess: '', paymentMethod: 'Online' });
   const [isSuccess, setIsSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [dynamicHints, setDynamicHints] = useState({});
+  const [dynamicHintImages, setDynamicHintImages] = useState({});
   const [showResultCheck, setShowResultCheck] = useState(false);
   const [searchPhone, setSearchPhone] = useState('');
   const [myResults, setMyResults] = useState(null);
@@ -20,17 +21,38 @@ export default function Home() {
   const [allRegistrations, setAllRegistrations] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [eventStatuses, setEventStatuses] = useState({});
+  const [dynamicPrices, setDynamicPrices] = useState({});
+  const [prizes, setPrizes] = useState({});
+  const [paymentInfo, setPaymentInfo] = useState({ bank: '', account: '', name: '', branch: '', qr: null });
 
   React.useEffect(() => {
     getHints().then(res => {
       const hintMap = {};
-      res.forEach(r => hintMap[r.eventId] = r.hintText);
+      const imageMap = {};
+      res.forEach(r => {
+        hintMap[r.eventId] = r.hintText;
+        imageMap[r.eventId] = r.hintImage;
+      });
       setDynamicHints(hintMap);
+      setDynamicHintImages(imageMap);
     });
     getEventStatuses().then(res => {
       const statusMap = {};
-      res.forEach(r => statusMap[r.eventId] = r.isDisabled === 1);
+      const priceMap = {};
+      res.forEach(r => {
+        statusMap[r.eventId] = r.isDisabled === 1;
+        priceMap[r.eventId] = r.price;
+      });
       setEventStatuses(statusMap);
+      setDynamicPrices(priceMap);
+    });
+    getPrizes().then(res => {
+      const prizeMap = {};
+      res.forEach(r => prizeMap[r.eventId] = r.prizeText);
+      setPrizes(prizeMap);
+    });
+    getPaymentInfo().then(res => {
+      if (res && res.bank) setPaymentInfo(res);
     });
   }, []);
 
@@ -67,9 +89,6 @@ export default function Home() {
 
     setIsSubmitting(false);
     setIsSuccess(true);
-    setTimeout(() => {
-      handleCloseModal();
-    }, 3000);
   };
 
   const handleCheckResults = async () => {
@@ -117,14 +136,37 @@ export default function Home() {
     const event = EVENT_DETAILS.find(e => e.id === reg.eventId);
     if (!event) return null;
 
+    const eventRegs = allRegistrations.filter(r => r.eventId === reg.eventId);
+
     if (event.playMode === 'number') {
       const minDiff = getMinDiff(reg.eventId, officialResult);
       const guessNum = Number(reg.guess);
       const resultNum = Number(officialResult);
       if (isNaN(guessNum) || isNaN(resultNum)) return false;
-      return Math.abs(guessNum - resultNum) === minDiff;
+      
+      const isEligible = Math.abs(guessNum - resultNum) === minDiff;
+      if (!isEligible) return false;
+
+      // First person to guess correctly wins
+      const earlierWinner = eventRegs.find(r => {
+        const d = Math.abs(Number(r.guess) - resultNum);
+        return d === minDiff && new Date(r.timestamp) < new Date(reg.timestamp);
+      });
+      return !earlierWinner;
     } else {
-      return reg.guess && reg.guess.toLowerCase().includes(officialResult.toLowerCase());
+      const guess = (reg.guess || '').toLowerCase().trim();
+      const correctAnswers = (officialResult || '').split(',').map(ans => ans.toLowerCase().trim()).filter(a => a);
+      const isCorrect = correctAnswers.some(ans => guess === ans || (ans.length > 2 && guess.includes(ans)));
+      
+      if (!isCorrect) return false;
+
+      // First person to guess correctly wins
+      const earlierWinner = eventRegs.find(r => {
+        const rg = (r.guess || '').toLowerCase().trim();
+        const isRgCorrect = correctAnswers.some(ans => rg === ans || (ans.length > 2 && rg.includes(ans)));
+        return isRgCorrect && new Date(r.timestamp) < new Date(reg.timestamp);
+      });
+      return !earlierWinner;
     }
   };
 
@@ -256,7 +298,7 @@ export default function Home() {
                 Live Events
              </div>
              <div className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-white/5 border border-white/10 text-slate-300 text-sm font-bold">
-                <span className="text-orange-400">Rs. 20</span> entry fee
+                Play & Win <span className="text-orange-400">Grand Prizes</span>
              </div>
           </div>
         </motion.div>
@@ -277,9 +319,17 @@ export default function Home() {
               
               <div className="relative z-10">
                 <span className="inline-block px-3 py-1 rounded-full bg-orange-500/20 text-orange-300 text-xs font-bold uppercase tracking-wider mb-4 border border-orange-500/30">
-                  Rs. {event.price} / Play
+                  Rs. {dynamicPrices[event.id] !== undefined ? dynamicPrices[event.id] : event.price} / Play
                 </span>
                 <h3 className="text-3xl font-bold mb-3 text-white">{event.title}</h3>
+                
+                {prizes[event.id] && (
+                  <div className="flex items-center gap-2 mb-4 bg-purple-500/10 border border-purple-500/20 px-4 py-2 rounded-2xl w-fit group-hover:bg-purple-500/20 transition-all">
+                    <Gift size={16} className="text-purple-400 animate-pulse" />
+                    <span className="text-purple-300 text-sm font-black tracking-tight">{prizes[event.id]}</span>
+                  </div>
+                )}
+
                 <p className="text-slate-400 text-sm leading-relaxed mb-8">
                   {event.description}
                 </p>
@@ -327,22 +377,109 @@ export default function Home() {
               </button>
 
               {isSuccess ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <CheckCircle size={64} className="text-green-500 mb-6" />
-                  <h3 className="text-2xl font-bold text-white mb-2">Played Successfully!</h3>
-                  <p className="text-slate-400">Your selection was saved. Good luck!</p>
+                <div className="flex flex-col items-center justify-center py-6 text-center">
+                  <motion.div 
+                    initial={{ scale: 0 }} 
+                    animate={{ scale: 1 }} 
+                    className="bg-green-500/20 p-4 rounded-full mb-6"
+                  >
+                    <CheckCircle size={48} className="text-green-500" />
+                  </motion.div>
+                  <h3 className="text-2xl font-black text-white mb-2 uppercase tracking-tight">Registration Sent!</h3>
+                  <p className="text-slate-400 text-sm mb-8 leading-relaxed px-4">
+                    {formData.paymentMethod === 'Cash' 
+                      ? "Your entry has been received. Please pay in cash to the organizer to verify your participation."
+                      : "Your entry has been received. Please complete the payment to verify your participation."
+                    }
+                  </p>
+                  
+                  {formData.paymentMethod === 'Online' && (
+                    <div className="w-full bg-slate-800/80 border border-slate-700 rounded-3xl p-6 mb-6 text-left selection:bg-green-500/30">
+                       <div className="flex items-center gap-2 mb-4 text-green-400">
+                          <Banknote size={16} />
+                          <span className="text-[10px] font-black uppercase tracking-[0.2em]">Payment Instructions</span>
+                       </div>
+                       
+                       <div className="space-y-4">
+                          <div className="grid grid-cols-1 gap-3">
+                             <div>
+                                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mb-1">Bank Details</p>
+                                <p className="text-white text-sm font-bold leading-tight">{paymentInfo.bank || 'Bank Name Pending'}</p>
+                                <p className="text-slate-400 text-xs">{paymentInfo.branch || 'Branch'}</p>
+                             </div>
+                             <div className="p-3 bg-slate-900 rounded-xl border border-slate-700">
+                                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mb-1">Account Number (Tap to copy)</p>
+                                <button 
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(paymentInfo.account);
+                                    alert("Account number copied!");
+                                  }}
+                                  className="text-green-400 font-mono text-lg font-black hover:text-green-300 transition-colors"
+                                >
+                                  {paymentInfo.account || '0000000000'}
+                                </button>
+                             </div>
+                             <div>
+                                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mb-1">Account Holder Name</p>
+                                <p className="text-white text-sm font-bold uppercase">{paymentInfo.name || 'Admin Name'}</p>
+                             </div>
+                          </div>
+
+                          {paymentInfo.qr && (
+                             <div className="pt-4 border-t border-slate-700 flex flex-col items-center gap-3">
+                                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Scan QR to pay</p>
+                                <img src={paymentInfo.qr} alt="Payment QR" className="w-40 h-40 rounded-xl border-4 border-white shadow-2xl" />
+                             </div>
+                          )}
+                       </div>
+                    </div>
+                  )}
+
+                  <a 
+                    href={`https://wa.me/94702838364?text=${encodeURIComponent(`Hello! මම ${formData.name} (${formData.phone}). ${selectedEvent.title} සඳහා ලියාපදිංචි වුණා. මම ගෙවීම් කටයුතු (${formData.paymentMethod === 'Cash' ? 'අතින් මුදල් ලබා දීම' : 'Online'}) අවසන් කර ඇත. කරුණාකර තහවුරු කරන්න.`)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full py-4 rounded-xl bg-green-500 hover:bg-green-600 text-white font-black text-sm flex items-center justify-center gap-3 transition-all shadow-lg shadow-green-500/20"
+                  >
+                    Send Receipt via WhatsApp
+                  </a>
+                  
+                  <button 
+                    onClick={handleCloseModal}
+                    className="mt-6 text-slate-500 font-bold text-xs hover:text-slate-300 transition-colors"
+                  >
+                    Close & Return
+                  </button>
                 </div>
               ) : (
                 <>
                   <h3 className="text-2xl font-bold bg-gradient-to-r from-orange-400 to-amber-300 text-transparent bg-clip-text pr-8 mb-2">
                     {selectedEvent.title}
                   </h3>
-                  <p className="text-slate-400 text-sm mb-4">Enter details and play. Entry fee: Rs. {selectedEvent.price}</p>
+                  <p className="text-slate-400 text-sm mb-4">Enter details and play. Entry fee: Rs. {dynamicPrices[selectedEvent.id] !== undefined ? dynamicPrices[selectedEvent.id] : selectedEvent.price}</p>
                   
-                  {(dynamicHints[selectedEvent.id] || selectedEvent.hint) && (
-                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4 text-sm text-amber-200 text-left">
-                      <HelpCircle size={16} className="inline mr-2 -mt-0.5 text-amber-400" />
-                      {dynamicHints[selectedEvent.id] || selectedEvent.hint}
+                  {(dynamicHints[selectedEvent.id] || dynamicHintImages[selectedEvent.id] || selectedEvent.hint) && (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-[1.5rem] p-4 mb-4 text-sm text-amber-200 text-left overflow-hidden">
+                      <div className="flex items-center gap-2 mb-2">
+                        <HelpCircle size={16} className="text-amber-400" />
+                        <span className="font-bold opacity-80">ඉඟිය (Hint)</span>
+                      </div>
+                      
+                      {dynamicHintImages[selectedEvent.id] && (
+                        <div className="mb-3 rounded-xl overflow-hidden border border-amber-500/20 shadow-lg">
+                          <img 
+                            src={dynamicHintImages[selectedEvent.id]} 
+                            alt="Event Hint" 
+                            className="w-full h-auto max-h-[200px] object-contain bg-slate-900/50"
+                          />
+                        </div>
+                      )}
+
+                      {dynamicHints[selectedEvent.id] || selectedEvent.hint ? (
+                        <p className="leading-relaxed">
+                          {dynamicHints[selectedEvent.id] || selectedEvent.hint}
+                        </p>
+                      ) : null}
                     </div>
                   )}
 
@@ -372,6 +509,26 @@ export default function Home() {
                       </div>
                     </div>
 
+                    <div className="space-y-3">
+                       <label className="block text-xs font-medium text-slate-400">Payment Method</label>
+                       <div className="grid grid-cols-2 gap-3">
+                          <button 
+                            type="button"
+                            onClick={() => setFormData({...formData, paymentMethod: 'Online'})}
+                            className={`py-3 rounded-xl text-xs font-bold border-2 transition-all ${formData.paymentMethod === 'Online' ? 'border-orange-500 bg-orange-500/10 text-orange-400' : 'border-slate-800 bg-slate-900 text-slate-500'}`}
+                          >
+                             Bank / Online
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => setFormData({...formData, paymentMethod: 'Cash'})}
+                            className={`py-3 rounded-xl text-xs font-bold border-2 transition-all ${formData.paymentMethod === 'Cash' ? 'border-orange-500 bg-orange-500/10 text-orange-400' : 'border-slate-800 bg-slate-900 text-slate-500'}`}
+                          >
+                             Hand Cash
+                          </button>
+                       </div>
+                    </div>
+
                     <div className="w-full h-px bg-slate-800 my-4" />
 
                     {/* Interactive Virtual Game UI rendering */}
@@ -383,7 +540,7 @@ export default function Home() {
                         disabled={isSubmitting}
                         className={`w-full py-4 rounded-xl font-bold text-lg transition-colors shadow-lg flex justify-center items-center ${isSubmitting ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-white text-slate-900 hover:bg-orange-100'}`}
                       >
-                        {isSubmitting ? 'Processing...' : `Pay & Play (Rs. ${selectedEvent.price})`}
+                        {isSubmitting ? 'Processing...' : `Pay & Play (Rs. ${dynamicPrices[selectedEvent.id] !== undefined ? dynamicPrices[selectedEvent.id] : selectedEvent.price})`}
                       </button>
                     </div>
                   </form>

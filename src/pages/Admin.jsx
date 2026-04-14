@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { getRegistrations, EVENT_DETAILS, clearRegistrations, getHints, updateHint, getOfficialResults, updateOfficialResult, updatePaymentStatus, updateManualWinnerStatus, getEventStatuses, updateEventStatus } from '../store';
+import { getRegistrations, EVENT_DETAILS, clearRegistrations, getHints, updateHint, getOfficialResults, updateOfficialResult, updatePaymentStatus, updateManualWinnerStatus, getEventStatuses, updateEventStatus, getPrizes, updatePrize, getPaymentInfo, updatePaymentInfo, removeRegistration } from '../store';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Trash2, Users, Banknote, Power, PowerOff } from 'lucide-react';
+import { ArrowLeft, Trash2, Users, Banknote, Power, PowerOff, Image as ImageIcon, Upload, X, Gift } from 'lucide-react';
 
 export default function Admin() {
   const [registrations, setRegistrations] = useState([]);
@@ -11,6 +11,10 @@ export default function Admin() {
   const [results, setResults] = useState({});
   const [showConfirmModal, setShowConfirmModal] = useState(null);
   const [eventStatuses, setEventStatuses] = useState({});
+  const [dynamicPrices, setDynamicPrices] = useState({});
+  const [hintImages, setHintImages] = useState({});
+  const [prizes, setPrizes] = useState({});
+  const [paymentInfo, setPaymentInfo] = useState({ bank: '', account: '', name: '', branch: '', qr: null });
 
   const refreshRegistrations = () => {
     getRegistrations().then(setRegistrations);
@@ -20,20 +24,38 @@ export default function Admin() {
     refreshRegistrations();
     getHints().then(res => {
       const hintMap = {};
-      res.forEach(r => hintMap[r.eventId] = r.hintText);
+      const imageMap = {};
+      res.forEach(r => {
+        hintMap[r.eventId] = r.hintText;
+        imageMap[r.eventId] = r.hintImage;
+      });
       setHints(hintMap);
+      setHintImages(imageMap);
     });
     getOfficialResults().then(res => {
       const resultMap = {};
       res.forEach(r => resultMap[r.eventId] = r.resultText);
       setResults(resultMap);
     });
-    getEventStatuses().then(res => {
-      const statusMap = {};
-      res.forEach(r => statusMap[r.eventId] = r.isDisabled === 1);
-      setEventStatuses(statusMap);
-    });
-  };
+      getEventStatuses().then(res => {
+        const statusMap = {};
+        const priceMap = {};
+        res.forEach(r => {
+          statusMap[r.eventId] = r.isDisabled === 1;
+          priceMap[r.eventId] = r.price;
+        });
+        setEventStatuses(statusMap);
+        setDynamicPrices(priceMap);
+      });
+      getPrizes().then(res => {
+        const prizeMap = {};
+        res.forEach(r => prizeMap[r.eventId] = r.prizeText);
+        setPrizes(prizeMap);
+      });
+      getPaymentInfo().then(res => {
+        if (res && res.bank !== undefined) setPaymentInfo(res);
+      });
+    };
 
   useEffect(() => {
     const savedAuth = localStorage.getItem('isAdminAuthenticated');
@@ -53,16 +75,61 @@ export default function Admin() {
     }
   }, [isAuthenticated]);
 
-  const handleUpdateHint = async (eventId, hintText) => {
-    const res = await updateHint(eventId, hintText);
+  const handleUpdateHint = async (eventId) => {
+    const hintText = hints[eventId] !== undefined ? hints[eventId] : '';
+    const hintImage = hintImages[eventId] || null;
+    const res = await updateHint(eventId, hintText, hintImage);
     if (res.success) alert('Hint updated successfully everywhere!');
     else alert('Failed to update hint');
+  };
+
+  const handleImageUpload = (eventId, e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 500 * 1024) { // 500KB limit for D1
+        alert("Image is too large. Please use an image smaller than 500KB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setHintImages({ ...hintImages, [eventId]: reader.result });
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleUpdateResult = async (eventId, resultText) => {
     const res = await updateOfficialResult(eventId, resultText);
     if (res.success) alert('Result updated successfully!');
     else alert('Failed to update result');
+  };
+
+  const handleUpdatePrize = async (eventId) => {
+    const prizeText = prizes[eventId] || '';
+    const res = await updatePrize(eventId, prizeText);
+    if (res.success) alert('Prize updated successfully!');
+    else alert('Failed to update prize');
+  };
+
+  const handleUpdatePaymentInfo = async () => {
+    const res = await updatePaymentInfo(paymentInfo);
+    if (res.success) alert('Payment information updated successfully!');
+    else alert('Failed to update payment information');
+  };
+
+  const handleQRUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 800 * 1024) {
+        alert("QR Image is too large. Please use an image smaller than 800KB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPaymentInfo({ ...paymentInfo, qr: reader.result });
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleTogglePayment = (reg) => {
@@ -83,6 +150,17 @@ export default function Admin() {
     }
   };
 
+  const handleRemoveParticipant = async (id) => {
+    if (window.confirm("Are you sure you want to delete this participant? This cannot be undone.")) {
+      const res = await removeRegistration(id);
+      if (res.success) {
+        setRegistrations(registrations.filter(r => r.id !== id));
+      } else {
+        alert('Failed to delete participant');
+      }
+    }
+  };
+
   const handleToggleWinner = async (reg) => {
     const newStatus = !reg.isManualWinner;
     const res = await updateManualWinnerStatus(reg.id, newStatus);
@@ -96,11 +174,27 @@ export default function Admin() {
   const handleToggleEventStatus = async (eventId) => {
     const currentStatus = !!eventStatuses[eventId];
     const newStatus = !currentStatus;
-    const res = await updateEventStatus(eventId, newStatus);
+    const price = dynamicPrices[eventId] || EVENT_DETAILS.find(e => e.id === eventId)?.price || 20;
+    const res = await updateEventStatus(eventId, newStatus, price);
     if (res.success) {
       setEventStatuses({ ...eventStatuses, [eventId]: newStatus });
     } else {
       alert('Failed to update event status');
+    }
+  };
+
+  const handleUpdateEventPrice = async (eventId) => {
+    const status = !!eventStatuses[eventId];
+    const price = Number(dynamicPrices[eventId]);
+    if (isNaN(price) || price < 0) {
+      alert("Please enter a valid price.");
+      return;
+    }
+    const res = await updateEventStatus(eventId, status, price);
+    if (res.success) {
+      alert('Event price updated successfully!');
+    } else {
+      alert('Failed to update price');
     }
   };
 
@@ -119,36 +213,40 @@ export default function Admin() {
     const officialResult = results[event.id];
     
     if (officialResult) {
-      if (event.playMode === 'number') {
-        const resultNum = Number(officialResult);
-        if (!isNaN(resultNum)) {
-          // Find minimum difference
-          let minDiff = Infinity;
-          regs.forEach(r => {
-            const guessNum = Number(r.guess);
-            if (!isNaN(guessNum)) {
-              const diff = Math.abs(guessNum - resultNum);
-              if (diff < minDiff) minDiff = diff;
-            }
-          });
-          // Mark winners
-          regs = regs.map(r => {
-            const guessNum = Number(r.guess);
-            const isAutoWinner = !isNaN(guessNum) && Math.abs(guessNum - resultNum) === minDiff;
-            const isWinner = r.isManualWinner || isAutoWinner;
-            return { ...r, isWinner, isLoser: !isWinner };
-          });
-        }
-      } else {
-        // Text mode
-        regs = regs.map(r => {
-          const isAutoWinner = r.guess && r.guess.toLowerCase().includes(officialResult.toLowerCase());
-          const isWinner = r.isManualWinner || isAutoWinner;
-          return { ...r, isWinner, isLoser: !isWinner };
+      const resultNum = Number(officialResult);
+      const isNumberMode = event.playMode === 'number' && !isNaN(resultNum);
+      let firstAutoWinnerId = null;
+
+      if (isNumberMode) {
+        let minDiff = Infinity;
+        regs.forEach(r => {
+          const guessNum = Number(r.guess);
+          if (!isNaN(guessNum)) {
+            const diff = Math.abs(guessNum - resultNum);
+            if (diff < minDiff) minDiff = diff;
+          }
         });
+
+        const eligible = regs.filter(r => {
+          const guessNum = Number(r.guess);
+          return !isNaN(guessNum) && Math.abs(guessNum - resultNum) === minDiff;
+        }).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        firstAutoWinnerId = eligible[0]?.id;
+      } else {
+        const eligible = regs.filter(r => {
+          const guess = (r.guess || '').toLowerCase().trim();
+          const correctAnswers = officialResult.split(',').map(ans => ans.toLowerCase().trim()).filter(a => a);
+          return correctAnswers.some(ans => guess === ans || (ans.length > 2 && guess.includes(ans)));
+        }).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        firstAutoWinnerId = eligible[0]?.id;
       }
+
+      regs = regs.map(r => {
+        const isAutoWinner = r.id === firstAutoWinnerId;
+        const isWinner = !!(r.isManualWinner || isAutoWinner);
+        return { ...r, isWinner, isLoser: !isWinner };
+      });
     } else {
-      // No official result, but still check manual winners
       regs = regs.map(r => ({ ...r, isWinner: !!r.isManualWinner }));
     }
     
@@ -272,6 +370,63 @@ export default function Admin() {
           </div>
         </div>
 
+        {/* Payment Info Management */}
+        <div className="bg-slate-800 rounded-3xl border border-slate-700 overflow-hidden">
+          <div className="p-6 bg-green-500/10 border-b border-slate-700 flex items-center gap-3">
+             <div className="p-2 bg-green-500 rounded-lg text-white">
+               <Banknote size={20} />
+             </div>
+             <div>
+               <h3 className="text-xl font-bold text-white">Payment Gateway Configuration</h3>
+               <p className="text-slate-400 text-xs font-medium">Set your bank details for online entry payments</p>
+             </div>
+          </div>
+          <div className="p-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+             <div className="space-y-4">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <div>
+                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">Bank Name</label>
+                   <input className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-green-500 transition-colors" value={paymentInfo.bank} onChange={e => setPaymentInfo({...paymentInfo, bank: e.target.value})} placeholder="e.g. Bank of Ceylon" />
+                 </div>
+                 <div>
+                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">Branch</label>
+                   <input className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-green-500 transition-colors" value={paymentInfo.branch} onChange={e => setPaymentInfo({...paymentInfo, branch: e.target.value})} placeholder="e.g. Maharagama" />
+                 </div>
+               </div>
+               <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">Account Number</label>
+                  <input className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-green-500 transition-colors" value={paymentInfo.account} onChange={e => setPaymentInfo({...paymentInfo, account: e.target.value})} placeholder="e.g. 0101XXXXXXXX" />
+               </div>
+               <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">Account Name</label>
+                  <input className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-green-500 transition-colors" value={paymentInfo.name} onChange={e => setPaymentInfo({...paymentInfo, name: e.target.value})} placeholder="e.g. J.R. Sejan" />
+               </div>
+               <button onClick={handleUpdatePaymentInfo} className="w-full bg-green-600 hover:bg-green-500 text-white font-black py-4 rounded-xl transition-all shadow-lg active:scale-95">Sync Payment Info</button>
+             </div>
+
+             <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 rounded-[2rem] p-8 bg-slate-950/30">
+                {paymentInfo.qr ? (
+                  <div className="relative group">
+                    <img src={paymentInfo.qr} alt="Payment QR" className="max-h-[200px] rounded-2xl shadow-2xl border-4 border-white" />
+                    <button onClick={() => setPaymentInfo({...paymentInfo, qr: null})} className="absolute -top-3 -right-3 bg-red-500 text-white p-2 rounded-full shadow-lg">
+                       <X size={16} />
+                    </button>
+                    <p className="text-center mt-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active QR Code</p>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center cursor-pointer group">
+                    <div className="w-20 h-20 bg-slate-800 rounded-3xl flex items-center justify-center text-slate-500 group-hover:bg-green-500/10 group-hover:text-green-500 transition-all mb-4">
+                      <Upload size={32} />
+                    </div>
+                    <p className="text-white font-bold mb-1">Upload QR Code</p>
+                    <p className="text-slate-500 text-xs">LankaQR, Bank App QR, etc.</p>
+                    <input type="file" className="hidden" accept="image/*" onChange={handleQRUpload} />
+                  </label>
+                )}
+             </div>
+          </div>
+        </div>
+
         {/* Breakdown */}
         <div className="space-y-8">
           {grouped.map(group => (
@@ -287,6 +442,16 @@ export default function Admin() {
                   )}
                 </div>
                 <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 bg-slate-700 px-3 py-1.5 rounded-xl border border-slate-600">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Fee: Rs.</span>
+                    <input 
+                      type="number"
+                      className="w-16 bg-transparent border-none text-orange-400 font-bold text-sm focus:ring-0 p-0"
+                      value={dynamicPrices[group.id] !== undefined ? dynamicPrices[group.id] : group.price}
+                      onChange={(e) => setDynamicPrices({...dynamicPrices, [group.id]: e.target.value})}
+                      onBlur={() => handleUpdateEventPrice(group.id)}
+                    />
+                  </div>
                   <button 
                     onClick={() => handleToggleEventStatus(group.id)}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${eventStatuses[group.id] ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30' : 'bg-green-500/10 text-green-400 hover:bg-green-500/20 border border-green-500/20'}`}
@@ -301,18 +466,74 @@ export default function Admin() {
               </div>
               
               {/* Hint editor */}
-              <div className="p-4 bg-slate-800/80 border-b border-slate-700 flex flex-col md:flex-row gap-2 items-center">
-                <div className="text-slate-400 text-sm font-medium w-full md:w-auto shrink-0">Current Hint:</div>
+              <div className="p-4 bg-slate-800/80 border-b border-slate-700 space-y-4">
+                <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+                  <div className="text-slate-400 text-sm font-medium w-full md:w-auto shrink-0">Text Hint:</div>
+                  <input 
+                    className="flex-1 w-full bg-slate-900 border border-slate-700 focus:border-orange-500 rounded-lg px-3 py-2 text-sm text-amber-200 outline-none" 
+                    value={hints[group.id] !== undefined ? hints[group.id] : group.hint || ''}
+                    onChange={(e) => setHints({...hints, [group.id]: e.target.value})}
+                    placeholder="Enter a hint to show to players..."
+                  />
+                </div>
+
+                <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+                  <div className="text-slate-400 text-sm font-medium w-full md:w-auto shrink-0">Image Hint:</div>
+                  <div className="flex-1 flex flex-wrap gap-4 items-center">
+                    {hintImages[group.id] ? (
+                      <div className="relative group">
+                        <img 
+                          src={hintImages[group.id]} 
+                          alt="Hint" 
+                          className="h-20 w-20 object-cover rounded-lg border border-slate-600 shadow-lg"
+                        />
+                        <button 
+                          onClick={() => setHintImages({...hintImages, [group.id]: null})}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center h-20 w-20 border-2 border-dashed border-slate-700 rounded-lg cursor-pointer hover:border-orange-500/50 hover:bg-slate-700/30 transition-all">
+                        <div className="flex flex-col items-center justify-center pt-1">
+                          <ImageIcon size={20} className="text-slate-500" />
+                          <span className="text-[10px] text-slate-500 mt-1 font-bold">Upload</span>
+                        </div>
+                        <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(group.id, e)} />
+                      </label>
+                    )}
+                    <div className="text-[10px] text-slate-500 italic max-w-xs">
+                      {group.id === 'ata-ganan-kireema' ? "Recommended: Upload a clear photo of the Papaya seeds." : "Optional: Add an image to clarify the hint."}
+                    </div>
+                  </div>
+                  
+                  <button 
+                    onClick={() => handleUpdateHint(group.id)}
+                    className="w-full md:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white px-6 py-2.5 rounded-xl text-sm font-black transition-all shadow-lg active:scale-95"
+                  >
+                    <Upload size={16} />
+                    Sync Hint Data
+                  </button>
+                </div>
+              </div>
+
+              {/* Prize editor */}
+              <div className="p-4 bg-purple-900/10 border-b border-slate-700 flex flex-col md:flex-row gap-2 items-center">
+                <div className="text-purple-400 text-sm font-bold w-full md:w-auto shrink-0 flex items-center gap-2">
+                  <Gift size={16} />
+                  Event Prize:
+                </div>
                 <input 
-                  className="flex-1 w-full bg-slate-900 border border-slate-700 focus:border-orange-500 rounded-lg px-3 py-2 text-sm text-amber-200 outline-none" 
-                  value={hints[group.id] !== undefined ? hints[group.id] : group.hint || ''}
-                  onChange={(e) => setHints({...hints, [group.id]: e.target.value})}
-                  placeholder="Enter a hint to show to players..."
+                  className="flex-1 w-full bg-slate-900 border border-purple-700/50 focus:border-purple-500 rounded-lg px-3 py-2 text-sm text-white outline-none" 
+                  value={prizes[group.id] || ''}
+                  onChange={(e) => setPrizes({...prizes, [group.id]: e.target.value})}
+                  placeholder="e.g. Rs. 5000 Cash Prize or Smartphone..."
                 />
                 <button 
-                  onClick={() => handleUpdateHint(group.id, hints[group.id] !== undefined ? hints[group.id] : group.hint)}
-                  className="w-full md:w-auto bg-slate-700 hover:bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
-                >Update Hint</button>
+                  onClick={() => handleUpdatePrize(group.id)}
+                  className="w-full md:w-auto bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-lg"
+                >Save Prize</button>
               </div>
 
               {/* Result editor */}
@@ -322,7 +543,7 @@ export default function Admin() {
                   className="flex-1 w-full bg-slate-900 border border-orange-700/50 focus:border-orange-500 rounded-lg px-3 py-2 text-sm text-white outline-none" 
                   value={results[group.id] !== undefined ? results[group.id] : ''}
                   onChange={(e) => setResults({...results, [group.id]: e.target.value})}
-                  placeholder={group.playMode === 'number' ? "Enter winning number..." : "Enter winning answer..."}
+                  placeholder={group.playMode === 'number' ? "Enter winning number..." : "Enter winning answers (e.g. Lotus, Nelum, නෙළුම්)..."}
                   type={group.playMode === 'number' ? "number" : "text"}
                 />
                 <button 
@@ -346,6 +567,7 @@ export default function Admin() {
                         {group.guessLabel && <th className="p-4 font-semibold text-orange-400">{group.guessLabel}</th>}
                         <th className="p-4 font-semibold text-slate-300 text-center">Payment</th>
                         <th className="p-4 font-semibold text-slate-300 text-center">Result</th>
+                        <th className="p-4 font-semibold text-slate-300 text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/50">
@@ -371,12 +593,17 @@ export default function Admin() {
                             </td>
                           )}
                           <td className="p-4 text-center">
-                            <button
-                              onClick={() => handleTogglePayment(reg)}
-                              className={`text-xs px-3 py-1 rounded-full font-bold transition-colors ${reg.isPaid ? 'bg-blue-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
-                            >
-                              {reg.isPaid ? 'Paid ✔' : 'Mark as Paid'}
-                            </button>
+                             <div className="flex flex-col items-center gap-1">
+                               <button
+                                 onClick={() => handleTogglePayment(reg)}
+                                 className={`text-[10px] px-3 py-1 rounded-lg font-bold transition-colors ${reg.isPaid ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
+                               >
+                                 {reg.isPaid ? 'Paid ✔' : 'Mark Paid'}
+                               </button>
+                               <span className={`text-[9px] font-black uppercase tracking-tighter ${reg.paymentMethod === 'Cash' ? 'text-amber-500' : 'text-slate-500'}`}>
+                                 {reg.paymentMethod === 'Cash' ? '💵 Cash' : '💳 Online'}
+                               </span>
+                             </div>
                           </td>
                           <td className="p-4 text-center">
                             <div className="flex flex-col items-center gap-2">
@@ -396,6 +623,15 @@ export default function Admin() {
                                 {reg.isManualWinner ? 'Manual Winner ✔' : 'Set as Winner'}
                               </button>
                             </div>
+                          </td>
+                          <td className="p-4 text-center">
+                              <button 
+                                onClick={() => handleRemoveParticipant(reg.id)}
+                                className="p-2 text-slate-500 hover:text-red-500 transition-colors rounded-lg hover:bg-red-500/10"
+                                title="Delete Participant"
+                              >
+                                <Trash2 size={16} />
+                              </button>
                           </td>
                         </tr>
                       ))}
