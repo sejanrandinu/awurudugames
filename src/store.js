@@ -123,3 +123,17 @@ export const EVENT_DETAILS = [
     icon: '🍉'
   }
 ];
+
+export const updatePaymentStatus = async (id, isPaid) => {
+  try {
+    const res = await fetch('/api/registrations', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, isPaid })
+    });
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return { success: false };
+  }
+};

@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// ../.wrangler/tmp/bundle-ZDgDFb/checked-fetch.js
+// ../.wrangler/tmp/bundle-TeqQAm/checked-fetch.js
 var urls = /* @__PURE__ */ new Set();
 function checkURL(request, init) {
   const url = request instanceof URL ? request : new URL(
@@ -58,6 +58,10 @@ __name(onRequestPost, "onRequestPost");
 async function onRequestGet2(context) {
   const { env } = context;
   try {
+    try {
+      await env.DB.prepare("ALTER TABLE registrations ADD COLUMN isPaid BOOLEAN DEFAULT 0").run();
+    } catch (e) {
+    }
     const { results } = await env.DB.prepare("SELECT * FROM registrations ORDER BY timestamp DESC").all();
     return Response.json(results || []);
   } catch (err) {
@@ -71,8 +75,12 @@ async function onRequestPost2(context) {
     const data = await request.json();
     const id = crypto.randomUUID();
     const { eventId, eventName, price, name, phone, guess } = data;
+    try {
+      await env.DB.prepare("ALTER TABLE registrations ADD COLUMN isPaid BOOLEAN DEFAULT 0").run();
+    } catch (e) {
+    }
     await env.DB.prepare(
-      "INSERT INTO registrations (id, eventId, eventName, price, name, phone, guess) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO registrations (id, eventId, eventName, price, name, phone, guess, isPaid) VALUES (?, ?, ?, ?, ?, ?, ?, 0)"
     ).bind(id, eventId, eventName, price, name, phone, guess || "").run();
     return Response.json({ success: true, id });
   } catch (err) {
@@ -80,6 +88,24 @@ async function onRequestPost2(context) {
   }
 }
 __name(onRequestPost2, "onRequestPost");
+async function onRequestPut(context) {
+  const { request, env } = context;
+  try {
+    const data = await request.json();
+    const { id, isPaid } = data;
+    try {
+      await env.DB.prepare("ALTER TABLE registrations ADD COLUMN isPaid BOOLEAN DEFAULT 0").run();
+    } catch (e) {
+    }
+    await env.DB.prepare(
+      "UPDATE registrations SET isPaid = ? WHERE id = ?"
+    ).bind(isPaid ? 1 : 0, id).run();
+    return Response.json({ success: true });
+  } catch (err) {
+    return new Response(err.message, { status: 500 });
+  }
+}
+__name(onRequestPut, "onRequestPut");
 async function onRequestDelete(context) {
   const { env } = context;
   try {
@@ -154,6 +180,13 @@ var routes = [
     method: "POST",
     middlewares: [],
     modules: [onRequestPost2]
+  },
+  {
+    routePath: "/api/registrations",
+    mountPath: "/api",
+    method: "PUT",
+    middlewares: [],
+    modules: [onRequestPut]
   },
   {
     routePath: "/api/results",
@@ -658,7 +691,7 @@ var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx)
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError;
 
-// ../.wrangler/tmp/bundle-ZDgDFb/middleware-insertion-facade.js
+// ../.wrangler/tmp/bundle-TeqQAm/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
@@ -690,7 +723,7 @@ function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// ../.wrangler/tmp/bundle-ZDgDFb/middleware-loader.entry.ts
+// ../.wrangler/tmp/bundle-TeqQAm/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class ___Facade_ScheduledController__ {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;

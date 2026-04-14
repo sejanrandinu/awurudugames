@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getRegistrations, EVENT_DETAILS, clearRegistrations, getHints, updateHint } from '../store';
+import { getRegistrations, EVENT_DETAILS, clearRegistrations, getHints, updateHint, getOfficialResults, updateOfficialResult, updatePaymentStatus } from '../store';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Trash2, Users, Banknote } from 'lucide-react';
 
@@ -8,6 +8,7 @@ export default function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [hints, setHints] = useState({});
+  const [results, setResults] = useState({});
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -17,6 +18,11 @@ export default function Admin() {
         res.forEach(r => hintMap[r.eventId] = r.hintText);
         setHints(hintMap);
       });
+      getOfficialResults().then(res => {
+        const resultMap = {};
+        res.forEach(r => resultMap[r.eventId] = r.resultText);
+        setResults(resultMap);
+      });
     }
   }, [isAuthenticated]);
 
@@ -24,6 +30,22 @@ export default function Admin() {
     const res = await updateHint(eventId, hintText);
     if (res.success) alert('Hint updated successfully everywhere!');
     else alert('Failed to update hint');
+  };
+
+  const handleUpdateResult = async (eventId, resultText) => {
+    const res = await updateOfficialResult(eventId, resultText);
+    if (res.success) alert('Result updated successfully!');
+    else alert('Failed to update result');
+  };
+
+  const handleTogglePayment = async (id, currentStatus) => {
+    const newStatus = !currentStatus;
+    const res = await updatePaymentStatus(id, newStatus);
+    if (res.success) {
+      setRegistrations(registrations.map(r => r.id === id ? { ...r, isPaid: newStatus } : r));
+    } else {
+      alert('Failed to update payment status');
+    }
   };
 
   const handleClear = async () => {
@@ -37,9 +59,41 @@ export default function Admin() {
 
   // Group by event
   const grouped = EVENT_DETAILS.map(event => {
+    let regs = registrations.filter(r => r.eventId === event.id);
+    const officialResult = results[event.id];
+    
+    if (officialResult) {
+      if (event.playMode === 'number') {
+        const resultNum = Number(officialResult);
+        if (!isNaN(resultNum)) {
+          // Find minimum difference
+          let minDiff = Infinity;
+          regs.forEach(r => {
+            const guessNum = Number(r.guess);
+            if (!isNaN(guessNum)) {
+              const diff = Math.abs(guessNum - resultNum);
+              if (diff < minDiff) minDiff = diff;
+            }
+          });
+          // Mark winners
+          regs = regs.map(r => {
+            const guessNum = Number(r.guess);
+            const isWinner = !isNaN(guessNum) && Math.abs(guessNum - resultNum) === minDiff;
+            return { ...r, isWinner, isLoser: !isWinner };
+          });
+        }
+      } else {
+        // Text mode
+        regs = regs.map(r => {
+          const isWinner = r.guess && r.guess.toLowerCase().includes(officialResult.toLowerCase());
+          return { ...r, isWinner, isLoser: !isWinner };
+        });
+      }
+    }
+    
     return {
       ...event,
-      registrations: registrations.filter(r => r.eventId === event.id)
+      registrations: regs
     };
   });
 
@@ -156,6 +210,22 @@ export default function Admin() {
                   className="w-full md:w-auto bg-slate-700 hover:bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
                 >Update Hint</button>
               </div>
+
+              {/* Result editor */}
+              <div className="p-4 bg-orange-900/10 border-b border-slate-700 flex flex-col md:flex-row gap-2 items-center">
+                <div className="text-orange-400 text-sm font-bold w-full md:w-auto shrink-0">Official Result:</div>
+                <input 
+                  className="flex-1 w-full bg-slate-900 border border-orange-700/50 focus:border-orange-500 rounded-lg px-3 py-2 text-sm text-white outline-none" 
+                  value={results[group.id] !== undefined ? results[group.id] : ''}
+                  onChange={(e) => setResults({...results, [group.id]: e.target.value})}
+                  placeholder={group.playMode === 'number' ? "Enter winning number..." : "Enter winning answer..."}
+                  type={group.playMode === 'number' ? "number" : "text"}
+                />
+                <button 
+                  onClick={() => handleUpdateResult(group.id, results[group.id])}
+                  className="w-full md:w-auto bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-lg"
+                >Save Result</button>
+              </div>
               
               <div className="h-[300px] overflow-y-auto custom-scrollbar">
                 {group.registrations.length === 0 ? (
@@ -170,6 +240,7 @@ export default function Admin() {
                         <th className="p-4 font-semibold text-slate-300">Name</th>
                         <th className="p-4 font-semibold text-slate-300">Phone</th>
                         {group.guessLabel && <th className="p-4 font-semibold text-orange-400">{group.guessLabel}</th>}
+                        <th className="p-4 font-semibold text-slate-300 text-center">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/50">
@@ -185,6 +256,25 @@ export default function Admin() {
                               {reg.guess}
                             </td>
                           )}
+                          <td className="p-4 text-center">
+                            {reg.isWinner !== undefined ? (
+                              reg.isWinner ? (
+                                <div className="flex flex-col items-center gap-2">
+                                  <span className="bg-green-500/20 text-green-400 text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap">🎉 WINNER</span>
+                                  <button
+                                    onClick={() => handleTogglePayment(reg.id, reg.isPaid)}
+                                    className={`text-xs px-3 py-1 rounded-full font-bold transition-colors ${reg.isPaid ? 'bg-blue-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
+                                  >
+                                    {reg.isPaid ? 'Paid ✔' : 'Mark as Paid'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="bg-red-500/10 text-red-400 text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap">Lost</span>
+                              )
+                            ) : (
+                              <span className="text-slate-500 text-xs">Waiting</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
