@@ -9,6 +9,17 @@ export const getRegistrations = async () => {
   }
 };
 
+export const getRegistrationsByPhone = async (phone) => {
+  try {
+    const res = await fetch(`/api/registrations?phone=${encodeURIComponent(phone)}`);
+    if (!res.ok) throw new Error('Network error');
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return [];
+  }
+};
+
 export const addRegistration = async (registration) => {
   try {
     const res = await fetch('/api/registrations', {
@@ -81,6 +92,31 @@ export const updateOfficialResult = async (eventId, resultText) => {
   }
 };
 
+export const getEventStatuses = async () => {
+  try {
+    const res = await fetch('/api/event-status');
+    if (!res.ok) throw new Error('Network error');
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return [];
+  }
+};
+
+export const updateEventStatus = async (eventId, isDisabled) => {
+  try {
+    const res = await fetch('/api/event-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId, isDisabled })
+    });
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return { success: false };
+  }
+};
+
 export const EVENT_DETAILS = [
   {
     id: 'sagawunu-mala',
@@ -99,18 +135,18 @@ export const EVENT_DETAILS = [
     price: 20,
     playMode: 'text',
     guessLabel: 'අමුත්තාගේ නම (Guest Name)',
-    hint: 'ඉඟිය (Hint): මොහු මෑතකදී අතිශය ජනප්‍රිය වූ ලාංකීය චිත්‍රපටයක ප්‍රධාන චරිතයකි.',
+    hint: 'ඉඟිය (Hint): ',
     icon: '🕵️'
   },
   {
     id: 'sagawunu-wasthuwa',
     title: 'සැඟවුණු වස්තුව (Hidden Treasure)',
-    description: 'The treasure is hidden somewhere. Read the hint and guess the location!',
+    description: 'Can you guess the hidden treasure? Read the hint and win amazing prizes!',
     price: 20,
     playMode: 'text',
-    guessLabel: 'සැඟවුණු තැන (Location Guess)',
-    hint: 'ඉඟිය (Hint): මේ වස්තුව හැංගිලා තියෙන්නේ ගමේ පරණම කඩේ කිට්ටුව...',
-    icon: '🗺️'
+    guessLabel: 'සැඟවුණු වස්තුව (Hidden Treasure)',
+    hint: 'ඉඟිය (Hint): ',
+    icon: '🏺'
   },
   {
     id: 'ata-ganan-kireema',
@@ -119,7 +155,7 @@ export const EVENT_DETAILS = [
     price: 20,
     playMode: 'number',
     guessLabel: 'ඇට ගණන (Number of Seeds)',
-    hint: 'ඉඟිය (Hint): ඇට ගණන 300ත් 500ත් අතර පවතී.',
+    hint: 'ඉඟිය (Hint): ',
     icon: '🍉'
   }
 ];
@@ -130,6 +166,19 @@ export const updatePaymentStatus = async (id, isPaid) => {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, isPaid })
+    });
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return { success: false };
+  }
+};
+export const updateManualWinnerStatus = async (id, isManualWinner) => {
+  try {
+    const res = await fetch('/api/registrations', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, isManualWinner })
     });
     return await res.json();
   } catch (err) {

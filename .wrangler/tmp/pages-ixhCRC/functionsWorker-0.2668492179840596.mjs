@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// ../.wrangler/tmp/bundle-TeqQAm/checked-fetch.js
+// ../.wrangler/tmp/bundle-qmGIDx/checked-fetch.js
 var urls = /* @__PURE__ */ new Set();
 function checkURL(request, init) {
   const url = request instanceof URL ? request : new URL(
@@ -56,13 +56,27 @@ __name(onRequestPost, "onRequestPost");
 
 // api/registrations.js
 async function onRequestGet2(context) {
-  const { env } = context;
+  const { request, env } = context;
+  const url = new URL(request.url);
+  const phone = url.searchParams.get("phone");
   try {
     try {
       await env.DB.prepare("ALTER TABLE registrations ADD COLUMN isPaid BOOLEAN DEFAULT 0").run();
     } catch (e) {
     }
-    const { results } = await env.DB.prepare("SELECT * FROM registrations ORDER BY timestamp DESC").all();
+    try {
+      await env.DB.prepare("ALTER TABLE registrations ADD COLUMN isManualWinner BOOLEAN DEFAULT 0").run();
+    } catch (e) {
+    }
+    let query = "SELECT * FROM registrations ORDER BY timestamp DESC";
+    let stmt;
+    if (phone) {
+      query = "SELECT * FROM registrations WHERE phone = ? ORDER BY timestamp DESC";
+      stmt = env.DB.prepare(query).bind(phone);
+    } else {
+      stmt = env.DB.prepare(query);
+    }
+    const { results } = await stmt.all();
     return Response.json(results || []);
   } catch (err) {
     return new Response(err.message, { status: 500 });
@@ -79,8 +93,12 @@ async function onRequestPost2(context) {
       await env.DB.prepare("ALTER TABLE registrations ADD COLUMN isPaid BOOLEAN DEFAULT 0").run();
     } catch (e) {
     }
+    try {
+      await env.DB.prepare("ALTER TABLE registrations ADD COLUMN isManualWinner BOOLEAN DEFAULT 0").run();
+    } catch (e) {
+    }
     await env.DB.prepare(
-      "INSERT INTO registrations (id, eventId, eventName, price, name, phone, guess, isPaid) VALUES (?, ?, ?, ?, ?, ?, ?, 0)"
+      "INSERT INTO registrations (id, eventId, eventName, price, name, phone, guess, isPaid, isManualWinner) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)"
     ).bind(id, eventId, eventName, price, name, phone, guess || "").run();
     return Response.json({ success: true, id });
   } catch (err) {
@@ -92,14 +110,21 @@ async function onRequestPut(context) {
   const { request, env } = context;
   try {
     const data = await request.json();
-    const { id, isPaid } = data;
+    const { id, isPaid, isManualWinner } = data;
     try {
       await env.DB.prepare("ALTER TABLE registrations ADD COLUMN isPaid BOOLEAN DEFAULT 0").run();
     } catch (e) {
     }
-    await env.DB.prepare(
-      "UPDATE registrations SET isPaid = ? WHERE id = ?"
-    ).bind(isPaid ? 1 : 0, id).run();
+    try {
+      await env.DB.prepare("ALTER TABLE registrations ADD COLUMN isManualWinner BOOLEAN DEFAULT 0").run();
+    } catch (e) {
+    }
+    if (isPaid !== void 0) {
+      await env.DB.prepare("UPDATE registrations SET isPaid = ? WHERE id = ?").bind(isPaid ? 1 : 0, id).run();
+    }
+    if (isManualWinner !== void 0) {
+      await env.DB.prepare("UPDATE registrations SET isManualWinner = ? WHERE id = ?").bind(isManualWinner ? 1 : 0, id).run();
+    }
     return Response.json({ success: true });
   } catch (err) {
     return new Response(err.message, { status: 500 });
@@ -691,7 +716,7 @@ var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx)
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError;
 
-// ../.wrangler/tmp/bundle-TeqQAm/middleware-insertion-facade.js
+// ../.wrangler/tmp/bundle-qmGIDx/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
@@ -723,7 +748,7 @@ function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// ../.wrangler/tmp/bundle-TeqQAm/middleware-loader.entry.ts
+// ../.wrangler/tmp/bundle-qmGIDx/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class ___Facade_ScheduledController__ {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;
