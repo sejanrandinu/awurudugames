@@ -1,0 +1,9 @@
+name = "awurudu-games"
+pages_build_output_dir = "dist"
+compatibility_date = "2024-03-29"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "awurudu_db"
+database_id = "f52da93a-1998-49e3-aecc-81a8094a84ad"
+preview_database_id = "DB"
