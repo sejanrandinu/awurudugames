@@ -83,7 +83,7 @@ export default function Home() {
     await addRegistration({
       eventId: selectedEvent.id,
       eventName: selectedEvent.title,
-      price: selectedEvent.price,
+      price: dynamicPrices[selectedEvent.id] !== undefined ? dynamicPrices[selectedEvent.id] : selectedEvent.price,
       ...formData
     });
 
@@ -114,7 +114,8 @@ export default function Home() {
   };
 
   const getMinDiff = (eventId, officialResult) => {
-    const eventRegs = allRegistrations.filter(r => r.eventId === eventId);
+    // Only count paid registrations for the winning minimum difference
+    const eventRegs = allRegistrations.filter(r => r.eventId === eventId && r.isPaid);
     const resultNum = Number(officialResult);
     if (isNaN(resultNum)) return Infinity;
     
@@ -129,44 +130,46 @@ export default function Home() {
     return min;
   };
 
-  const checkWinner = (reg, officialResult) => {
-    if (!officialResult) return null;
-    if (reg.isManualWinner) return true;
+  const checkStatus = (reg, officialResult) => {
+    if (!officialResult) return { isCorrect: false, isWinner: false };
+    if (!reg.isPaid) return { isCorrect: false, isWinner: false }; // Users only see results if paid
+    if (reg.isManualWinner) return { isCorrect: true, isWinner: true };
 
     const event = EVENT_DETAILS.find(e => e.id === reg.eventId);
-    if (!event) return null;
+    if (!event) return { isCorrect: false, isWinner: false };
 
-    const eventRegs = allRegistrations.filter(r => r.eventId === reg.eventId);
+    // Only compare against other PAID registrations
+    const eventRegs = allRegistrations.filter(r => r.eventId === reg.eventId && r.isPaid);
 
     if (event.playMode === 'number') {
       const minDiff = getMinDiff(reg.eventId, officialResult);
       const guessNum = Number(reg.guess);
       const resultNum = Number(officialResult);
-      if (isNaN(guessNum) || isNaN(resultNum)) return false;
+      if (isNaN(guessNum) || isNaN(resultNum)) return { isCorrect: false, isWinner: false };
       
       const isEligible = Math.abs(guessNum - resultNum) === minDiff;
-      if (!isEligible) return false;
+      if (!isEligible) return { isCorrect: false, isWinner: false };
 
-      // First person to guess correctly wins
+      // Among PAID participants, who guessed earliest?
       const earlierWinner = eventRegs.find(r => {
         const d = Math.abs(Number(r.guess) - resultNum);
         return d === minDiff && new Date(r.timestamp) < new Date(reg.timestamp);
       });
-      return !earlierWinner;
+      return { isCorrect: true, isWinner: !earlierWinner };
     } else {
       const guess = (reg.guess || '').toLowerCase().trim();
       const correctAnswers = (officialResult || '').split(',').map(ans => ans.toLowerCase().trim()).filter(a => a);
       const isCorrect = correctAnswers.some(ans => guess === ans || (ans.length > 2 && guess.includes(ans)));
       
-      if (!isCorrect) return false;
+      if (!isCorrect) return { isCorrect: false, isWinner: false };
 
-      // First person to guess correctly wins
+      // Among PAID participants, who guessed correctly earliest?
       const earlierWinner = eventRegs.find(r => {
         const rg = (r.guess || '').toLowerCase().trim();
         const isRgCorrect = correctAnswers.some(ans => rg === ans || (ans.length > 2 && rg.includes(ans)));
         return isRgCorrect && new Date(r.timestamp) < new Date(reg.timestamp);
       });
-      return !earlierWinner;
+      return { isCorrect: true, isWinner: !earlierWinner };
     }
   };
 
@@ -435,14 +438,20 @@ export default function Home() {
                     </div>
                   )}
 
-                  <a 
-                    href={`https://wa.me/94702838364?text=${encodeURIComponent(`Hello! මම ${formData.name} (${formData.phone}). ${selectedEvent.title} සඳහා ලියාපදිංචි වුණා. මම ගෙවීම් කටයුතු (${formData.paymentMethod === 'Cash' ? 'අතින් මුදල් ලබා දීම' : 'Online'}) අවසන් කර ඇත. කරුණාකර තහවුරු කරන්න.`)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full py-4 rounded-xl bg-green-500 hover:bg-green-600 text-white font-black text-sm flex items-center justify-center gap-3 transition-all shadow-lg shadow-green-500/20"
-                  >
-                    Send Receipt via WhatsApp
-                  </a>
+                  {formData.paymentMethod === 'Online' ? (
+                    <a 
+                      href={`https://wa.me/94702838364?text=${encodeURIComponent(`Hello! මම ${formData.name} (${formData.phone}). ${selectedEvent.title} සඳහා ලියාපදිංචි වුණා. මම ගෙවීම් කටයුතු (Online) අවසන් කර ඇත. කරුණාකර තහවුරු කරන්න.`)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="w-full py-4 rounded-xl bg-green-500 hover:bg-green-600 text-white font-black text-sm flex items-center justify-center gap-3 transition-all shadow-lg shadow-green-500/20"
+                    >
+                      Send Receipt via WhatsApp
+                    </a>
+                  ) : (
+                    <div className="w-full py-4 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 font-bold text-sm text-center">
+                      Please pay Rs. {dynamicPrices[selectedEvent.id] || selectedEvent.price} in cash to complete registration.
+                    </div>
+                  )}
                   
                   <button 
                     onClick={handleCloseModal}
@@ -643,7 +652,7 @@ export default function Home() {
                             const event = EVENT_DETAILS.find(e => e.id === reg.eventId);
                             const officialRes = officialResults[reg.eventId];
                             const isPaid = reg.isPaid;
-                            const isWinner = isPaid ? checkWinner(reg, officialRes) : false;
+                            const { isWinner } = isPaid && officialRes ? checkStatus(reg, officialRes) : { isWinner: false };
 
                             return (
                               <div key={reg.id} className={`p-5 rounded-2xl border transition-all ${!isPaid ? 'bg-amber-500/5 border-amber-500/20' : isWinner ? 'bg-green-500/10 border-green-500/50 shadow-[0_0_15px_rgba(34,197,94,0.15)]' : 'bg-slate-800/50 border-slate-700'}`}>
@@ -657,23 +666,24 @@ export default function Home() {
                                       </p>
                                     </div>
                                   </div>
-                                  {!isPaid ? (
-                                    <span className="bg-amber-500/20 text-amber-400 text-[10px] font-black px-2 py-1 rounded-full border border-amber-500/30">Payment Pending ⏳</span>
-                                  ) : officialRes ? (
-                                    isWinner ? (
-                                      <span className="bg-green-500 text-white text-[10px] font-black px-2 py-1 rounded-full animate-bounce">WINNER 🎉</span>
-                                    ) : (
-                                      <span className="bg-red-500/20 text-red-400 text-[10px] font-black px-2 py-1 rounded-full border border-red-500/30">Better Luck Next Time</span>
-                                    )
+                                  <div className="flex gap-2 mb-2">
+                                  {isPaid && officialRes ? (
+                                    (() => {
+                                      const { isCorrect, isWinner } = checkStatus(reg, officialRes);
+                                      if (isWinner) return <span className="bg-green-500 text-white text-[10px] font-black px-2 py-1 rounded-full animate-bounce">TOP WINNER 🏆</span>;
+                                      if (isCorrect) return <span className="bg-blue-500 text-white text-[10px] font-black px-2 py-1 rounded-full">Correct 🎯</span>;
+                                      return <span className="bg-red-500/20 text-red-400 text-[10px] font-black px-2 py-1 rounded-full border border-red-500/30">Better Luck Next Time</span>;
+                                    })()
                                   ) : (
                                     <span className="bg-slate-700 text-slate-400 text-[10px] font-black px-2 py-1 rounded-full">Coming Soon</span>
                                   )}
+                                </div>
                                 </div>
                                 
                                 <div className="grid grid-cols-2 gap-4 mt-4 bg-slate-900/40 p-3 rounded-xl border border-white/5">
                                   <div>
                                     <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mb-1">Your Guess</p>
-                                    <p className={`text-sm font-bold ${isPaid ? (isWinner ? 'text-green-400' : 'text-orange-300') : 'text-slate-400'}`}>{reg.guess}</p>
+                                    <p className={`text-sm font-bold ${isPaid ? (checkStatus(reg, officialRes).isCorrect ? 'text-green-400' : 'text-orange-300') : 'text-slate-400'}`}>{reg.guess}</p>
                                   </div>
                                   <div>
                                     <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mb-1">Actual Result</p>
@@ -687,7 +697,7 @@ export default function Home() {
                                   </div>
                                 </div>
 
-                                {isPaid && isWinner && (
+                                {isPaid && reg.paymentMethod === 'Online' && checkStatus(reg, officialRes).isWinner && (
                                   <div className="mt-4 pt-4 border-t border-green-500/20 text-center">
                                     <p className="text-green-400 text-xs font-bold mb-2">Congratulations! 🎉</p>
                                     <p className="text-white text-[10px] mb-3 opacity-80 text-balance">Take a screenshot of this page and contact the organizer to claim your prize.</p>
