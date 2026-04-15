@@ -3,7 +3,7 @@ import { getRegistrations, EVENT_DETAILS, clearRegistrations, getHints, updateHi
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Trash2, Users, Banknote, Power, PowerOff, Image as ImageIcon, Upload, X, Gift, Download, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 export default function Admin() {
   const [registrations, setRegistrations] = useState([]);
@@ -273,7 +273,7 @@ export default function Admin() {
       tableRows.push(rowData);
     });
 
-    doc.autoTable({
+    autoTable(doc, {
       head: [tableColumn],
       body: tableRows,
       startY: 20,
