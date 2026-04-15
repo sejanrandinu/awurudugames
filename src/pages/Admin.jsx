@@ -2,8 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { getRegistrations, EVENT_DETAILS, clearRegistrations, getHints, updateHint, getOfficialResults, updateOfficialResult, updatePaymentStatus, updateManualWinnerStatus, getEventStatuses, updateEventStatus, getPrizes, updatePrize, getPaymentInfo, updatePaymentInfo, removeRegistration } from '../store';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Trash2, Users, Banknote, Power, PowerOff, Image as ImageIcon, Upload, X, Gift, Download, FileText } from 'lucide-react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 export default function Admin() {
   const [registrations, setRegistrations] = useState([]);
@@ -234,7 +232,7 @@ export default function Admin() {
     }
 
     const csvContent = csvRows.join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     
     const link = document.createElement("a");
@@ -245,43 +243,75 @@ export default function Admin() {
     document.body.removeChild(link);
   };
 
-  const handleDownloadPDF = () => {
+  const handlePrintPDF = () => {
     if (registrations.length === 0) {
-      alert("No data available to download.");
+      alert("No data available to print.");
       return;
     }
 
-    const doc = new jsPDF('landscape');
-    doc.setFontSize(18);
-    doc.text("Awurudu Games Registrations", 14, 15);
+    const printWindow = window.open('', '_blank');
     
-    const tableColumn = ["ID", "Name", "Phone", "Event ID", "Guess", "Rs", "Paid", "Method", "Date"];
-    const tableRows = [];
+    let htmlContent = `
+      <html>
+        <head>
+          <title>Awurudu Games Registrations</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; }
+            h1 { text-align: center; color: #ea580c; font-family: sans-serif; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f97316; color: white; }
+            tr:nth-child(even) { background-color: #f4f4f5; }
+          </style>
+        </head>
+        <body>
+          <h1>Awurudu Registrations</h1>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Event ID</th>
+                <th>Guess</th>
+                <th>Paid</th>
+                <th>Method</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+    `;
 
     registrations.forEach(reg => {
-      const rowData = [
-        reg.id,
-        reg.name || '',
-        reg.phone || '',
-        reg.eventId || '',
-        reg.guess || '',
-        reg.price,
-        reg.isPaid ? 'Yes' : 'No',
-        reg.paymentMethod || 'N/A',
-        new Date(reg.timestamp).toLocaleString('en-US', { timeZone: 'Asia/Colombo' })
-      ];
-      tableRows.push(rowData);
+      htmlContent += `
+        <tr>
+          <td>${reg.id}</td>
+          <td>${reg.name || ''}</td>
+          <td>${reg.phone || ''}</td>
+          <td>${reg.eventId || ''}</td>
+          <td>${reg.guess || ''}</td>
+          <td>${reg.isPaid ? 'Yes' : 'No'}</td>
+          <td>${reg.paymentMethod || 'N/A'}</td>
+          <td>${new Date(reg.timestamp).toLocaleString('en-US', { timeZone: 'Asia/Colombo' })}</td>
+        </tr>
+      `;
     });
 
-    autoTable(doc, {
-      head: [tableColumn],
-      body: tableRows,
-      startY: 20,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [249, 115, 22] } // Orange theme
-    });
+    htmlContent += `
+            </tbody>
+          </table>
+          <script>
+            window.onload = () => {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `;
 
-    doc.save(`awurudu_registrations_${new Date().toISOString().slice(0,10)}.pdf`);
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
   };
 
   const totalCollected = registrations.reduce((sum, r) => sum + r.price, 0);
@@ -426,12 +456,12 @@ export default function Admin() {
               <span className="inline">CSV</span>
             </button>
             <button 
-              onClick={handleDownloadPDF}
+              onClick={handlePrintPDF}
               className="flex-[1_1_100%] sm:flex-none flex items-center justify-center gap-2 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 px-4 py-2 rounded-lg transition-colors font-semibold text-sm border border-purple-500/20"
-              title="Download Data as PDF"
+              title="Print / Save as PDF"
             >
               <FileText size={16} />
-              <span className="inline">PDF</span>
+              <span className="inline">Print PDF</span>
             </button>
             <button 
               onClick={() => setIsAuthenticated(false)}
